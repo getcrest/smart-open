@@ -11,6 +11,7 @@
 import base64
 import io
 import logging
+import os
 import urllib.parse
 
 import smart_open.bytebuffer
@@ -19,6 +20,7 @@ import smart_open.constants
 try:
     import azure.storage.blob
     import azure.core.exceptions
+    from azure.storage.blob import BlobServiceClient
 except ImportError:
     MISSING_DEPS = True
 
@@ -34,6 +36,8 @@ _DEFAULT_MIN_PART_SIZE = 64 * 1024**2
 """Default minimum part size for Azure Cloud Storage multipart uploads is 64MB"""
 
 DEFAULT_BUFFER_SIZE = 4 * 1024**2
+ABFS_CREDENTIALS_ENV_NAME = "ABFS_CONNECTION_STRING"
+
 """Default buffer size for working with Azure Blob Storage is 256MB
 https://docs.microsoft.com/en-us/rest/api/storageservices/understanding-block-blobs--append-blobs--and-page-blobs
 """
@@ -54,6 +58,12 @@ def open_uri(uri, mode, transport_params):
     parsed_uri = parse_uri(uri)
     kwargs = smart_open.utils.check_kwargs(open, transport_params)
     return open(parsed_uri['container_id'], parsed_uri['blob_id'], mode, **kwargs)
+
+
+def infer_credentials():
+    abfs_conn_string = os.getenv(ABFS_CREDENTIALS_ENV_NAME)
+    if abfs_conn_string:
+        return BlobServiceClient.from_connection_string(abfs_conn_string)
 
 
 def open(
@@ -82,8 +92,10 @@ def open(
         The minimum part size for multipart uploads.  For writing only.
 
     """
+    client = client if client else infer_credentials()
     if not client:
-        raise ValueError('you must specify the client to connect to Azure')
+        raise ValueError(f'you must specify the client or environment var `{ABFS_CREDENTIALS_ENV_NAME}` to connect to '
+                         'Azure')
 
     if mode == smart_open.constants.READ_BINARY:
         return Reader(
